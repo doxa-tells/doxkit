@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DoxKit</title>
+<style>
+:root{--bg:#f5f5f7;--card:#fff;--line:#e3e3e8;--txt:#1d1d1f;--mut:#86868b;--acc:#0a66ff;--acc-l:#e8f0ff;--ok:#1a9e55;--err:#d93025}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;-webkit-user-select:none;user-select:none}
+.wrap{max-width:760px;margin:0 auto;padding:22px 22px 60px}
+header{display:flex;align-items:center;margin-bottom:18px}
+.logo{font-size:22px;font-weight:800;letter-spacing:-.3px;flex:1}
+.logo span{color:var(--acc)}
+.link{background:none;border:0;color:var(--acc);font:inherit;font-size:15px;cursor:pointer;padding:6px 0}
+.step{background:var(--card);border-radius:18px;padding:20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.step.off{opacity:.4;pointer-events:none}
+.st{font-size:13px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px}
+/* Шаг 1 */
+.drop{border:2px dashed #c9c9d0;border-radius:14px;padding:34px 16px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover,.drop.hov{border-color:var(--acc);background:var(--acc-l)}
+.drop svg{width:44px;height:44px;color:var(--acc)}
+.drop b{display:block;font-size:19px;margin:8px 0 2px}
+.drop small{color:var(--mut)}
+.flist{margin-top:12px}
+.f{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line)}
+.f:last-child{border:0}
+.f .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f .s{color:var(--mut);font-size:14px}
+.f .x{border:0;background:none;color:var(--mut);font-size:18px;cursor:pointer;padding:0 4px}
+.fbar{display:flex;gap:18px;margin-top:6px}
+/* Шаг 2 */
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.act{border:2px solid var(--line);background:#fff;border-radius:14px;padding:16px 10px;text-align:center;cursor:pointer;font:inherit;color:inherit;transition:.12s}
+.act:hover{border-color:#b9c9ee}
+.act.on{border-color:var(--acc);background:var(--acc-l)}
+.act:disabled{opacity:.35;cursor:not-allowed}
+.act svg{width:30px;height:30px;color:var(--acc)}
+.act b{display:block;font-size:17px;margin-top:6px}
+.act small{color:var(--mut);font-size:13px}
+/* Шаг 3 */
+.q{font-weight:600;margin:4px 0 10px}
+.big{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.opt{border:2px solid var(--line);background:#fff;border-radius:12px;padding:12px;cursor:pointer;font:inherit;color:inherit;text-align:left}
+.opt.on{border-color:var(--acc);background:var(--acc-l)}
+.opt b{display:block}.opt small{color:var(--mut);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:2px solid var(--line);background:#fff;border-radius:99px;padding:7px 16px;font:inherit;font-weight:600;cursor:pointer;text-transform:uppercase;font-size:14px}
+.chip.on{border-color:var(--acc);background:var(--acc);color:#fff}
+.chip.lc{text-transform:none}
+.convrow{display:flex;align-items:center;gap:12px;margin:10px 0;flex-wrap:wrap}
+.convrow .k{min-width:120px;color:var(--mut)}
+details{margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+summary{cursor:pointer;color:var(--acc);font-size:15px;list-style:none}
+summary::-webkit-details-marker{display:none}
+.adv{margin-top:6px}
+.adv .q{margin-top:14px;font-size:15px}
+textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid var(--line);border-radius:12px;padding:10px;resize:vertical;-webkit-user-select:text;user-select:text}
+.note{color:var(--mut);font-size:14px;margin-top:12px}
+.go{width:100%;border:0;border-radius:14px;background:var(--acc);color:#fff;font:inherit;font-size:18px;font-weight:700;padding:16px;cursor:pointer;margin:4px 0 6px}
+.go:disabled{background:#c9c9d0;cursor:not-allowed}
+.upl{text-align:center;color:var(--mut);font-size:14px;min-height:20px}
+/* Результаты */
+.rh{display:flex;align-items:center;margin:26px 0 10px}
+.rh h2{flex:1;font-size:20px;margin:0}
+.job{background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.jt{display:flex;align-items:center;gap:10px}
+.jt .n{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.badge{font-size:13px;color:var(--mut)}
+.bar{height:6px;background:#ececf0;border-radius:9px;overflow:hidden;margin:10px 0 6px}
+.bar div{height:100%;background:var(--acc);transition:width .4s}
+.done .bar div{background:var(--ok)}.error .bar div{background:var(--err)}
+.msg{font-size:14px;color:var(--mut);white-space:pre-line}
+.done .msg{color:var(--ok);font-weight:600}.error .msg{color:var(--err)}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn{border:0;background:var(--acc-l);color:var(--acc);border-radius:10px;padding:8px 14px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.btn.g{background:#f0f0f3;color:var(--txt)}
+.empty{text-align:center;color:var(--mut);padding:18px}
+.warn{background:#fff4e5;color:#8a5300;border-radius:12px;padding:10px 14px;font-size:14px;margin-bottom:14px}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#e8e8ed;padding:5px;border-radius:14px;margin-bottom:14px}
+.mode{border:0;background:none;border-radius:10px;padding:11px;font:inherit;font-weight:700;color:var(--mut);cursor:pointer}
+.mode.on{background:#fff;color:var(--txt);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.urlbox{min-height:96px;font-size:16px}
+.urlbox:focus{outline:none;border-color:var(--acc)}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">Dox<span>Kit</span></div>
+    <button class="link" onclick="post('/api/open-folder')">Открыть папку с готовыми файлами →</button>
+  </header>
+  <div id="warn"></div>
+
+  <div class="modes">
+    <button class="mode on" data-m="files">Мои файлы</button>
+    <button class="mode" data-m="link">Скачать по ссылке</button>
+  </div>
+
+  <!-- СКАЧАТЬ ПО ССЫЛКЕ -->
+  <div id="mode-link" class="hidden">
+    <div class="step">
+      <div class="st">1 · Ссылка</div>
+      <textarea id="urls" class="urlbox" placeholder="Вставьте ссылку: YouTube, TikTok, Instagram, VK, X…&#10;Можно несколько — каждую с новой строки"></textarea>
+      <div class="note">TikTok и Instagram скачиваются без водяного знака.</div>
+    </div>
+    <div class="step">
+      <div class="st">2 · Что скачать</div>
+      <div class="big" data-k="dl_mode">
+        <button class="opt on" data-v="video"><b>Видео</b><small>MP4, открывается везде</small></button>
+        <button class="opt" data-v="audio"><b>Только звук</b><small>MP3</small></button>
+        <button class="opt" data-v="video+text"><b>Видео + текст</b><small>скачать и расшифровать</small></button>
+      </div>
+      <div id="dl-lang" class="hidden" style="margin-top:14px">
+        <div class="q">Язык речи</div>
+        <div class="chips" data-k="dl_language">
+          <button class="chip lc on" data-v="ru">Русский</button><button class="chip lc" data-v="kk">Қазақша</button><button class="chip lc" data-v="en">English</button><button class="chip lc" data-v="auto">Определить сам</button>
+        </div>
+      </div>
+      <details>
+        <summary>Дополнительно ▾</summary>
+        <div class="adv">
+          <div class="q">Качество видео</div>
+          <div class="chips" data-k="dl_quality">
+            <button class="chip lc on" data-v="1080">1080p — лучший вариант</button><button class="chip lc" data-v="best">Максимальное (4K)</button><button class="chip lc" data-v="720">720p — легче</button>
+          </div>
+          <div class="q">Вход из браузера <span style="font-weight:400;color:var(--mut)">— для Instagram, закрытых и 18+ видео</span></div>
+          <div class="chips" data-k="browser">
+            <button class="chip lc on" data-v="none">Не нужно</button><button class="chip lc" data-v="chrome">Chrome</button><button class="chip lc" data-v="safari">Safari</button><button class="chip lc" data-v="firefox">Firefox</button>
+          </div>
+          <div class="note">Mac может спросить пароль от «Связки ключей» — это нормально, нажмите «Разрешить».</div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div id="mode-files">
+  <!-- ШАГ 1 -->
+  <div class="step">
+    <div class="st">1 · Файлы</div>
+    <div class="drop" id="drop">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <b>Перетащите файлы сюда</b>
+      <small>или нажмите, чтобы выбрать</small>
+      <input type="file" id="pick" multiple hidden>
+    </div>
+    <div class="flist" id="flist"></div>
+  </div>
+
+  <!-- ШАГ 2 -->
+  <div class="step off" id="s2">
+    <div class="st">2 · Что сделать</div>
+    <div class="acts">
+      <button class="act on" data-a="compress">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>
+        <b>Сжать</b><small>сделать файл легче</small></button>
+      <button class="act" data-a="convert">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4-4 4"/><path d="M3 11V9a2 2 0 0 1 2-2h16"/><path d="M7 21l-4-4 4-4"/><path d="M21 13v2a2 2 0 0 1-2 2H3"/></svg>
+        <b>Сменить формат</b><small>PDF → Word, MOV → MP4…</small></button>
+      <button class="act" data-a="transcribe">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/></svg>
+        <b>В текст</b><small>расшифровать речь</small></button>
+    </div>
+  </div>
+
+  <!-- ШАГ 3 -->
+  <div class="step off" id="s3">
+    <div class="st">3 · Настройка</div>
+
+    <div id="o-compress">
+      <div class="q">Насколько сжать?</div>
+      <div class="big" data-k="quality">
+        <button class="opt" data-v="high"><b>Немного</b><small>качество как было</small></button>
+        <button class="opt on" data-v="medium"><b>Средне</b><small>лучший вариант</small></button>
+        <button class="opt" data-v="low"><b>Максимально</b><small>самый маленький файл</small></button>
+      </div>
+      <details>
+        <summary>Дополнительно ▾</summary>
+        <div class="adv">
+          <div class="q">Размер видео</div>
+          <div class="chips" data-k="resolution">
+            <button class="chip lc on" data-v="original">Как было</button><button class="chip lc" data-v="1080">1080p</button><button class="chip lc" data-v="720">720p</button><button class="chip lc" data-v="480">480p</button>
+          </div>
+          <div class="q">Кодек видео</div>
+          <div class="chips" data-k="codec">
+            <button class="chip lc on" data-v="h264">H.264 — открывается везде</button><button class="chip lc" data-v="h265">H.265 — ещё меньше</button>
+          </div>
+          <div class="q">Размер фото</div>
+          <div class="chips" data-k="max_side">
+            <button class="chip lc on" data-v="original">Как было</button><button class="chip lc" data-v="2560">Большое</button><button class="chip lc" data-v="1920">Среднее</button><button class="chip lc" data-v="1280">Маленькое</button>
+          </div>
+          <div class="q">Формат фото</div>
+          <div class="chips" data-k="image_format">
+            <button class="chip lc on" data-v="keep">Как было</button><button class="chip" data-v="jpg">jpg</button><button class="chip" data-v="webp">webp</button><button class="chip" data-v="png">png</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div id="o-convert" class="hidden">
+      <div class="q">В какой формат?</div>
+      <div id="convrows"></div>
+    </div>
+
+    <div id="o-transcribe" class="hidden">
+      <div class="q">Язык записи</div>
+      <div class="chips" data-k="language">
+        <button class="chip lc on" data-v="ru">Русский</button><button class="chip lc" data-v="kk">Қазақша</button><button class="chip lc" data-v="en">English</button><button class="chip lc" data-v="auto">Определить сам</button>
+      </div>
+      <div class="note">Получите: текст, текст с таймкодами, субтитры и файл Word.</div>
+      <details>
+        <summary>Дополнительно ▾</summary>
+        <div class="adv">
+          <div class="q">Точность</div>
+          <div class="chips" data-k="model">
+            <button class="chip lc on" data-v="auto">Авто — подберу сам</button><button class="chip lc" data-v="turbo">Быстро</button><button class="chip lc" data-v="large">Максимальная (в 3 раза дольше)</button>
+          </div>
+          <div class="q">Подсказка: имена и редкие слова</div>
+          <textarea id="prompt" placeholder="Например: VELOR, Астана, hospitality"></textarea>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  </div><!-- /mode-files -->
+
+  <button class="go" id="go" disabled>Начать</button>
+  <div class="upl" id="upl"></div>
+
+  <div class="rh"><h2>Готово</h2><button class="link" onclick="post('/api/clear').then(poll)">Очистить список</button></div>
+  <div id="jobs"><div class="empty">Здесь появятся ваши файлы</div></div>
+</div>
+
+<script>
+const KINDS={video:"mp4 mov m4v mkv avi webm wmv flv 3gp mts gif",audio:"mp3 wav m4a aac flac ogg opus wma aiff aif",image:"jpg jpeg png webp heic heif tif tiff bmp",pdf:"pdf",doc:"docx doc odt rtf txt pages",slides:"pptx ppt odp key",sheet:"xlsx xls ods csv numbers"};
+const TARGETS={video:["mp4","mov","mp3","gif","webm","m4a","wav","mkv"],audio:["mp3","m4a","wav","flac"],image:["jpg","png","webp","pdf"],pdf:["docx","jpg","png","txt"],doc:["pdf","docx","txt","odt"],slides:["pdf","pptx"],sheet:["pdf","xlsx","csv"]};
+const KNAME={video:"Видео",audio:"Аудио",image:"Фото",pdf:"PDF",doc:"Документы",slides:"Презентации",sheet:"Таблицы"};
+const ACTNAME={compress:"Сжатие",convert:"Смена формата",transcribe:"Расшифровка",download:"Скачивание"};
+const GO={compress:"Сжать",convert:"Сменить формат",transcribe:"Расшифровать"};
+let mode="files",action="compress",files=[],targets={};
+const urlList=()=>$("#urls").value.split(/\s+/).map(s=>s.trim()).filter(s=>/^(https?:\/\/)?[\w-]+(\.[\w-]+)+\//i.test(s));
+document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{mode=b.dataset.m;render();if(mode==="link")$("#urls").focus()});
+const $=s=>document.querySelector(s);
+const ext=n=>(n.split(".").pop()||"").toLowerCase();
+const kind=n=>Object.keys(KINDS).find(k=>KINDS[k].split(" ").includes(ext(n)));
+const fmt=b=>b<1024?b+" Б":b<1048576?Math.round(b/1024)+" КБ":b<1073741824?(b/1048576).toFixed(1)+" МБ":(b/1073741824).toFixed(2)+" ГБ";
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const post=u=>fetch(u,{method:"POST"});
+
+// Выбор действия
+document.querySelectorAll(".act").forEach(b=>b.onclick=()=>{action=b.dataset.a;render()});
+// Одиночный выбор в группах
+document.querySelectorAll("[data-k]").forEach(g=>g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  g.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));render();
+}));
+const val=k=>document.querySelector(`[data-k="${k}"] .on`).dataset.v;
+
+// Файлы
+const drop=$("#drop"),pick=$("#pick");
+drop.onclick=()=>pick.click();
+pick.onchange=()=>{add([...pick.files]);pick.value=""};
+["dragenter","dragover"].forEach(e=>document.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("hov")}));
+["dragleave","drop"].forEach(e=>document.addEventListener(e,ev=>{ev.preventDefault();if(e==="drop"||!ev.relatedTarget)drop.classList.remove("hov")}));
+document.addEventListener("drop",ev=>add([...ev.dataTransfer.files]));
+function add(l){l=l.filter(f=>f.size>0);if(!l.length)return;files.push(...l);mode="files";render()}
+$("#urls").addEventListener("input",()=>render());
+function removeFile(i){files.splice(i,1);render()}
+
+function render(){
+  $("#flist").innerHTML=files.length?files.map((f,i)=>`<div class="f"><span class="n">${esc(f.name)}</span><span class="s">${fmt(f.size)}</span><button class="x" title="Убрать" onclick="removeFile(${i})">×</button></div>`).join("")
+    +`<div class="fbar"><button class="link" onclick="pick.click()">+ Добавить ещё</button><button class="link" style="color:var(--mut)" onclick="files=[];render()">Убрать все</button></div>`:"";
+  $("#drop").classList.toggle("hidden",files.length>0);
+
+  const kinds=[...new Set(files.map(f=>kind(f.name)).filter(Boolean))];
+  const mediaOnly=kinds.length>0&&kinds.every(k=>k==="audio"||k==="video");
+  const tb=document.querySelector('[data-a="transcribe"]');
+  tb.disabled=!mediaOnly&&files.length>0;
+  if(tb.disabled&&action==="transcribe")action="compress";
+
+  document.querySelectorAll(".act").forEach(b=>b.classList.toggle("on",b.dataset.a===action));
+  ["compress","convert","transcribe"].forEach(a=>$("#o-"+a).classList.toggle("hidden",a!==action));
+  $("#s2").classList.toggle("off",!files.length);
+  $("#s3").classList.toggle("off",!files.length);
+
+  // Форматы для конвертации — по каждому типу файлов
+  $("#convrows").innerHTML=kinds.length?kinds.map(k=>{
+    const src=new Set(files.filter(f=>kind(f.name)===k).map(f=>ext(f.name)));
+    const opts=TARGETS[k].filter(t=>!(src.size===1&&src.has(t)));
+    if(!targets[k]||!opts.includes(targets[k]))targets[k]=opts[0];
+    return `<div class="convrow"><span class="k">${KNAME[k]} →</span><div class="chips">${opts.map(o=>`<button class="chip ${o===targets[k]?"on":""}" onclick="targets['${k}']='${o}';render()">${o}</button>`).join("")}</div></div>`;
+  }).join(""):`<div class="note">Сначала добавьте файлы</div>`;
+
+  const unknown=files.filter(f=>!kind(f.name)).length;
+  document.querySelectorAll(".mode").forEach(b=>b.classList.toggle("on",b.dataset.m===mode));
+  $("#mode-files").classList.toggle("hidden",mode!=="files");
+  $("#mode-link").classList.toggle("hidden",mode!=="link");
+  if(mode==="link"){
+    const n=urlList().length;
+    $("#dl-lang").classList.toggle("hidden",val("dl_mode")!=="video+text");
+    $("#go").disabled=!n;
+    $("#go").textContent=n>1?`Скачать · ${n} ссылки`:"Скачать";
+    $("#upl").textContent="";
+    return;
+  }
+  $("#go").disabled=!files.length;
+  $("#go").textContent=files.length?`${GO[action]} · ${files.length} ${plural(files.length)}`:"Начать";
+  $("#upl").textContent=unknown?`${unknown} ${plural(unknown)} в неподдерживаемом формате — пропущу`:"";
+}
+function startDownload(){
+  const m=val("dl_mode");
+  const opts={mode:m==="audio"?"audio":"video",then_transcribe:m==="video+text",language:val("dl_language"),dl_quality:val("dl_quality"),browser:val("browser")};
+  const fd=new FormData();fd.append("action","download");fd.append("opts",JSON.stringify(opts));fd.append("urls",urlList().join("\n"));
+  fetch("/api/jobs",{method:"POST",body:fd}).then(()=>{poll();document.querySelector(".rh").scrollIntoView({behavior:"smooth"})});
+  $("#urls").value="";render();
+}
+const plural=n=>n%10===1&&n%100!==11?"файл":[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?"файла":"файлов";
+
+$("#go").onclick=()=>{
+  if(mode==="link")return startDownload();
+  const opts=action==="compress"?{quality:val("quality"),resolution:val("resolution"),codec:val("codec"),max_side:val("max_side"),image_format:val("image_format")}
+    :action==="convert"?{targets}:{language:val("language"),model:val("model"),prompt:$("#prompt").value};
+  const fd=new FormData();fd.append("action",action);fd.append("opts",JSON.stringify(opts));
+  files.forEach(f=>fd.append("files",f,f.name));
+  const x=new XMLHttpRequest();x.open("POST","/api/jobs");
+  x.upload.onprogress=e=>{if(e.lengthComputable)$("#upl").textContent="Подготовка… "+Math.round(e.loaded/e.total*100)+"%"};
+  x.onload=()=>{$("#upl").textContent="";poll();document.querySelector(".rh").scrollIntoView({behavior:"smooth"})};
+  x.onerror=()=>{$("#upl").textContent="Не получилось — попробуйте ещё раз"};
+  x.send(fd);files=[];render();$("#go").disabled=true;
+};
+
+const label=n=>n.includes("таймкод")?"Текст с таймкодами":({txt:"Текст",docx:"Word",srt:"Субтитры SRT",vtt:"Субтитры VTT"})[ext(n)]||ext(n).toUpperCase();
+async function poll(){
+  try{
+    const jobs=await (await fetch("/api/jobs")).json();
+    $("#jobs").innerHTML=jobs.length?jobs.map(j=>{
+      const after=j.outputs.reduce((a,o)=>a+o.size,0);
+      const size=j.status==="done"&&j.action==="compress"?` · ${fmt(j.size)} → ${fmt(after)}`:j.size?` · ${fmt(j.size)}`:"";
+      const msg=j.status==="queued"?"Ждёт очереди":j.status==="running"?(j.message||"Работаю")+(j.progress?` · ${j.progress}%`:""):j.message;
+      const multi=j.outputs.length>1;
+      return `<div class="job ${j.status}"><div class="jt"><span class="n">${esc(j.name)}</span><span class="badge">${ACTNAME[j.action]}${size}</span></div>
+      ${j.status==="done"?"":`<div class="bar"><div style="width:${j.status==="queued"?2:Math.max(j.progress,3)}%"></div></div>`}
+      <div class="msg">${j.status==="done"?"✓ ":""}${esc(msg||"")}</div>
+      ${j.outputs.length?`<div class="btns">${multi?j.outputs.map((o,i)=>`<button class="btn g" onclick="post('/api/open/${j.id}/${i}')">${esc(label(o.name))}</button>`).join(""):`<button class="btn" onclick="post('/api/open/${j.id}/0')">Открыть</button>`}<button class="btn g" onclick="post('/api/reveal/${j.id}/0')">Показать в папке</button></div>`:""}
+      </div>`}).join(""):`<div class="empty">Здесь появятся ваши файлы</div>`;
+  }catch(e){}
+}
+setInterval(poll,1000);poll();render();
+
+fetch("/api/status").then(r=>r.json()).then(s=>{
+  const miss=[["ffmpeg","видео и аудио"],["ytdlp","скачивание по ссылкам"],["ghostscript","сжатие PDF"],["libreoffice","Word/PowerPoint/Excel"],["whisper","расшифровка"]].filter(([k])=>!s[k]).map(([,n])=>n);
+  if(miss.length)$("#warn").innerHTML=`<div class="warn">Не установлено: ${miss.join(", ")}. Запустите install.sh ещё раз.</div>`;
+});
+</script>
+</body>
+</html>
