@@ -21,8 +21,48 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file
 
-# Когда приложение стартует из Dock/Launchpad, PATH не содержит Homebrew
-os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+import sys
+import glob as _glob
+
+IS_WIN = os.name == "nt"
+IS_MAC = sys.platform == "darwin"
+
+if IS_WIN:
+    # Программы, поставленные через winget, могут ещё не быть в PATH — добавляем сами
+    _la = os.environ.get("LOCALAPPDATA", "")
+    _pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    _extra = [os.path.join(_la, "Microsoft", "WinGet", "Links"),
+              os.path.join(_pf, "LibreOffice", "program")]
+    _extra += sorted(_glob.glob(os.path.join(_pf, "gs", "gs*", "bin")), reverse=True)[:1]
+    _extra += _glob.glob(os.path.join(_la, "Microsoft", "WinGet", "Packages", "Gyan.FFmpeg*", "*", "bin"))
+    _extra += [os.path.join(os.environ.get("USERPROFILE", ""), ".deno", "bin")]
+    os.environ["PATH"] = os.pathsep.join(_extra + [os.environ.get("PATH", "")])
+
+    # Не показывать чёрное окно консоли на каждый вызов ffmpeg
+    class _NoWindowPopen(subprocess.Popen):
+        def __init__(self, *a, **k):
+            k.setdefault("creationflags", 0x08000000)  # CREATE_NO_WINDOW
+            super().__init__(*a, **k)
+    subprocess.Popen = _NoWindowPopen
+else:
+    # Когда приложение стартует из Dock/Launchpad, PATH не содержит Homebrew
+    os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
+
+
+def gs_bin():
+    return shutil.which("gs") or shutil.which("gswin64c") or shutil.which("gswin32c")
+
+
+def os_open(path, reveal=False):
+    """Открыть файл/папку системным способом (Finder или Проводник)."""
+    path = str(path)
+    if IS_WIN:
+        if reveal:
+            subprocess.Popen(["explorer", "/select,", path])
+        else:
+            os.startfile(path)  # noqa: S606
+    else:
+        subprocess.Popen(["open", "-R", path] if reveal else ["open", path])
 
 APP_DIR = Path(__file__).resolve().parent
 WORK_DIR = APP_DIR / "work"
@@ -314,9 +354,10 @@ def h_compress(job):
     elif kind == "pdf":
         out = unique_path(src.stem, "pdf", " (сжато)")
         preset = {"high": "/printer", "medium": "/ebook", "low": "/screen"}[q]
-        if not shutil.which("gs"):
-            raise RuntimeError("Не найден Ghostscript. Выполните: brew install ghostscript")
-        run(["gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", f"-dPDFSETTINGS={preset}",
+        gs = gs_bin()
+        if not gs:
+            raise RuntimeError("Не найден Ghostscript. Запустите установщик DoxKit ещё раз")
+        run([gs, "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.5", f"-dPDFSETTINGS={preset}",
              "-dDetectDuplicateImages=true", "-dCompressFonts=true",
              "-dNOPAUSE", "-dQUIET", "-dBATCH", f"-sOutputFile={out}", str(src)])
     elif kind in ("doc", "slides", "sheet"):
@@ -516,7 +557,10 @@ def convert_pdf(job, src, target):
 
 
 def soffice_path():
-    for p in ("/Applications/LibreOffice.app/Contents/MacOS/soffice", shutil.which("soffice") or ""):
+    pf = os.environ.get("ProgramFiles", r"C:\Program Files")
+    for p in ("/Applications/LibreOffice.app/Contents/MacOS/soffice",
+              os.path.join(pf, "LibreOffice", "program", "soffice.exe"),
+              shutil.which("soffice") or ""):
         if p and Path(p).exists():
             return p
     return None
@@ -525,7 +569,7 @@ def soffice_path():
 def convert_office(src, target):
     so = soffice_path()
     if not so:
-        raise RuntimeError("Не найден LibreOffice. Выполните: brew install --cask libreoffice")
+        raise RuntimeError("Не найден LibreOffice. Запустите установщик DoxKit ещё раз")
     tmp = WORK_DIR / f"lo_out_{uuid.uuid4().hex[:8]}"
     profile = WORK_DIR / f"lo_profile_{uuid.uuid4().hex[:8]}"
     tmp.mkdir(parents=True)
@@ -535,7 +579,7 @@ def convert_office(src, target):
     elif target == "csv":
         flt = "csv:Text - txt - csv (StarCalc):44,34,76"
     try:
-        run([so, f"-env:UserInstallation=file://{profile}", "--headless", "--norestore",
+        run([so, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
              "--convert-to", flt, "--outdir", str(tmp), str(src)], timeout=900)
         produced = list(tmp.glob(f"*.{target}"))
         if not produced:
@@ -629,42 +673,29 @@ def whisper_model_path(job, repo):
         return snapshot_download(repo)
 
 
-def h_transcribe(job):
-    src = Path(job["src"])
-    o = job["opts"]
-    try:
-        import mlx_whisper
-    except ImportError as e:
-        raise RuntimeError("Не установлен mlx-whisper. Запустите install.sh ещё раз") from e
+FW_MODELS = {"turbo": "large-v3-turbo", "large": "large-v3"}  # faster-whisper (Windows/Intel)
+_FW_CACHE = {}
 
-    lang = o.get("language", "ru")
-    choice = o.get("model", "auto")
-    if choice == "auto":  # казахский заметно лучше на большой модели
-        choice = "large" if lang == "kk" else "turbo"
-    repo = WHISPER_MODELS.get(choice, WHISPER_MODELS["turbo"])
-    prompt = (o.get("prompt") or "").strip() or None
 
-    # 1) Готовим чистый звук: моно 16 кГц, выровненная громкость
-    update(job, message="Готовлю звук…", progress=1)
-    wav = src.parent / "_audio16k.wav"
-    run(["ffmpeg", "-hide_banner", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000",
-         "-af", "highpass=f=60,dynaudnorm=f=200", "-c:a", "pcm_s16le", str(wav)])
-    dur = media_duration(wav)
-
-    # 2) Модель (из кэша; если её нет — скачиваем один раз)
-    model_path = whisper_model_path(job, repo)
-
-    # 3) Расшифровка; «пульс» в интерфейсе, чтобы было видно, что идёт работа
+def start_ticker(job, dur):
     started = time.time()
     stop = threading.Event()
 
-    def ticker():
+    def tick():
         while not stop.wait(1):
             el = int(time.time() - started)
             update(job, message=f"Расшифровываю… {el // 60}:{el % 60:02d}"
                                 + (f" · запись {short_ts(dur)}" if dur else ""))
 
-    threading.Thread(target=ticker, daemon=True).start()
+    threading.Thread(target=tick, daemon=True).start()
+    return stop
+
+
+def whisper_mlx(job, wav, lang, choice, prompt, dur):
+    """Mac на Apple Silicon: MLX на видеочипе — очень быстро."""
+    import mlx_whisper
+    model_path = whisper_model_path(job, WHISPER_MODELS.get(choice, WHISPER_MODELS["turbo"]))
+    stop = start_ticker(job, dur)
     restore = _patch_tqdm(job)
     kwargs = dict(
         path_or_hf_repo=model_path, verbose=False, initial_prompt=prompt,
@@ -684,6 +715,64 @@ def h_transcribe(job):
     finally:
         stop.set()
         restore()
+    return result.get("segments", []), result.get("language")
+
+
+def whisper_fw(job, wav, lang, choice, prompt, dur):
+    """Windows / Intel: faster-whisper на процессоре (int8)."""
+    from faster_whisper import WhisperModel
+    name = FW_MODELS.get(choice, FW_MODELS["turbo"])
+    model = _FW_CACHE.get(name)
+    if model is None:
+        update(job, message="Загружаю модель распознавания (в первый раз скачается, 2–5 минут)…")
+        model = WhisperModel(name, device="cpu", compute_type="int8",
+                             cpu_threads=max(1, (os.cpu_count() or 4)))
+        _FW_CACHE.clear()
+        _FW_CACHE[name] = model
+    stop = start_ticker(job, dur)
+    try:
+        it, info = model.transcribe(
+            str(wav), language=None if lang in (None, "", "auto") else lang,
+            initial_prompt=prompt, beam_size=5, condition_on_previous_text=False,
+            vad_filter=True,  # пропускает тишину и музыку — меньше выдумок
+        )
+        segs = []
+        for sg in it:
+            segs.append({"start": sg.start, "end": sg.end, "text": sg.text})
+            if dur:
+                update(job, progress=max(1, min(99, int(sg.end / dur * 100))))
+    finally:
+        stop.set()
+    return segs, getattr(info, "language", None)
+
+
+def h_transcribe(job):
+    src = Path(job["src"])
+    o = job["opts"]
+    if importlib.util.find_spec("mlx_whisper"):
+        engine = whisper_mlx
+    elif importlib.util.find_spec("faster_whisper"):
+        engine = whisper_fw
+    else:
+        raise RuntimeError("Модуль расшифровки не установлен. Запустите установщик DoxKit ещё раз")
+
+    lang = o.get("language", "ru")
+    choice = o.get("model", "auto")
+    if choice == "auto":  # казахский заметно лучше на большой модели
+        choice = "large" if lang == "kk" else "turbo"
+    prompt = (o.get("prompt") or "").strip() or None
+
+    # 1) Готовим чистый звук: моно 16 кГц, выровненная громкость
+    update(job, message="Готовлю звук…", progress=1)
+    wav = src.parent / "_audio16k.wav"
+    run(["ffmpeg", "-hide_banner", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000",
+         "-af", "highpass=f=60,dynaudnorm=f=200", "-c:a", "pcm_s16le", str(wav)])
+    dur = media_duration(wav)
+
+    # 2) Расшифровка
+    started = time.time()
+    raw_segs, detected = engine(job, wav, lang, choice, prompt, dur)
+    result = {"segments": raw_segs, "language": detected}
 
     segs = clean_segments(result.get("segments", []))
     if not segs:
@@ -851,7 +940,6 @@ def h_download(job):
 
 def update_ytdlp_in_background():
     """Сайты часто меняются — раз в 2 дня тихо обновляем загрузчик."""
-    import sys
     stamp = APP_DIR / ".ytdlp_updated"
     try:
         if stamp.exists() and time.time() - stamp.stat().st_mtime < 2 * 86400:
@@ -881,9 +969,9 @@ def index():
 def status():
     return jsonify({
         "ffmpeg": bool(shutil.which("ffmpeg")),
-        "ghostscript": bool(shutil.which("gs")),
+        "ghostscript": bool(gs_bin()),
         "libreoffice": bool(soffice_path()),
-        "whisper": importlib.util.find_spec("mlx_whisper") is not None,
+        "whisper": (importlib.util.find_spec("mlx_whisper") or importlib.util.find_spec("faster_whisper")) is not None,
         "pdf2docx": importlib.util.find_spec("pdf2docx") is not None,
         "ytdlp": importlib.util.find_spec("yt_dlp") is not None,
         "out_dir": str(OUT_ROOT),
@@ -910,7 +998,8 @@ def create_jobs():
             created.append(public(job))
         return jsonify(created)
     for f in request.files.getlist("files"):
-        name = Path(f.filename or "file").name.replace(":", "-")
+        name = Path((f.filename or "file").replace("\\", "/")).name
+        name = "".join("-" if c in '<>:"/\\|?*' else c for c in name).strip(" .") or "file"
         ext = Path(name).suffix.lower().lstrip(".")
         kind = kind_of(ext)
         job_dir = WORK_DIR / uuid.uuid4().hex
@@ -959,20 +1048,20 @@ def download(jid, idx):
 @app.post("/api/reveal/<jid>/<int:idx>")
 def reveal(jid, idx=0):
     o = _output(jid, idx)
-    subprocess.Popen(["open", "-R", o["path"]])
+    os_open(o["path"], reveal=True)
     return jsonify(ok=True)
 
 
 @app.post("/api/open/<jid>/<int:idx>")
 def open_output(jid, idx):
     o = _output(jid, idx)
-    subprocess.Popen(["open", o["path"]])
+    os_open(o["path"])
     return jsonify(ok=True)
 
 
 @app.post("/api/open-folder")
 def open_folder():
-    subprocess.Popen(["open", str(OUT_ROOT)])
+    os_open(OUT_ROOT)
     return jsonify(ok=True)
 
 
@@ -1008,8 +1097,17 @@ def mac_identity():
 
 
 if __name__ == "__main__":
-    import sys
     from werkzeug.serving import make_server
+
+    if sys.stdout is None or sys.stderr is None:  # pythonw.exe на Windows
+        _log = open(APP_DIR / "filekit.log", "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+        sys.stdout = sys.stderr = _log
+    if IS_WIN:
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Benevsky.DoxKit")
+        except Exception:  # noqa: BLE001
+            pass
 
     URL = f"http://127.0.0.1:{PORT}"
     try:
@@ -1031,13 +1129,15 @@ if __name__ == "__main__":
         webview = None
 
     if "--browser" in sys.argv or webview is None:
-        subprocess.Popen(["open", URL])
+        import webbrowser
+        webbrowser.open(URL)
         if srv:
             srv.serve_forever()
     else:
         if srv:
             threading.Thread(target=srv.serve_forever, daemon=True).start()
-        mac_identity()
+        if IS_MAC:
+            mac_identity()
         webview.create_window("DoxKit", URL, width=880, height=920,
                               min_size=(640, 600), background_color="#f5f5f7")
         webview.start()

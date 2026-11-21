@@ -52,7 +52,9 @@ if [ "$ARCH" = "arm64" ]; then
   echo "    Модель Whisper Turbo (~1.6 ГБ, скачивается один раз)…"
   "$DEST/venv/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/whisper-large-v3-turbo')"
 else
-  echo "    Это Mac на Intel — расшифровка в текст недоступна (нужен чип M1 и новее). Остальное работает."
+  echo "    Mac на Intel — ставлю faster-whisper (расшифровка на процессоре, медленнее, чем на M-чипах)…"
+  "$DEST/venv/bin/python" -m pip install -q -U faster-whisper
+  "$DEST/venv/bin/python" -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"
 fi
 
 echo "==> 5/6 Собираю DoxKit.app"

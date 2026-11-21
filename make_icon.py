@@ -45,4 +45,5 @@ d.polygon([(x * SS, y * SS) for x, y in [(cx + 120, cy - 45), (cx + 30, cy), (cx
 img = img.resize((S, S), Image.LANCZOS)
 img.save(out / "icon.png")
 img.save(out / "icon.icns")
+img.save(out / "icon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 print("icon ok")
