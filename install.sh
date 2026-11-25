@@ -51,6 +51,9 @@ if [ "$ARCH" = "arm64" ]; then
   "$DEST/venv/bin/python" -m pip install -q -U mlx-whisper
   echo "    Модель Whisper Turbo (~1.6 ГБ, скачивается один раз)…"
   "$DEST/venv/bin/python" -c "from huggingface_hub import snapshot_download; snapshot_download('mlx-community/whisper-large-v3-turbo')"
+  echo "    Нейросеть «Убрать голос» (BS-RoFormer, ~600 МБ, один раз)…"
+  "$DEST/venv/bin/python" -m pip install -q -U "audio-separator[cpu]"
+  "$DEST/venv/bin/python" -c "from audio_separator.separator import Separator as S; s=S(model_file_dir='$DEST/models'); s.load_model(model_filename='model_bs_roformer_ep_317_sdr_12.9755.ckpt')" >/dev/null 2>&1 || echo "    ! модель скачается при первом использовании"
 else
   echo "    Mac на Intel — ставлю faster-whisper (расшифровка на процессоре, медленнее, чем на M-чипах)…"
   "$DEST/venv/bin/python" -m pip install -q -U faster-whisper

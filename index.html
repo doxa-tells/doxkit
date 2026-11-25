@@ -30,7 +30,8 @@ header{display:flex;align-items:center;margin-bottom:18px}
 .f .x{border:0;background:none;color:var(--mut);font-size:18px;cursor:pointer;padding:0 4px}
 .fbar{display:flex;gap:18px;margin-top:6px}
 /* Шаг 2 */
-.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.acts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:640px){.acts{grid-template-columns:1fr 1fr}}
 .act{border:2px solid var(--line);background:#fff;border-radius:14px;padding:16px 10px;text-align:center;cursor:pointer;font:inherit;color:inherit;transition:.12s}
 .act:hover{border-color:#b9c9ee}
 .act.on{border-color:var(--acc);background:var(--acc-l)}
@@ -40,7 +41,7 @@ header{display:flex;align-items:center;margin-bottom:18px}
 .act small{color:var(--mut);font-size:13px}
 /* Шаг 3 */
 .q{font-weight:600;margin:4px 0 10px}
-.big{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.big{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .opt{border:2px solid var(--line);background:#fff;border-radius:12px;padding:12px;cursor:pointer;font:inherit;color:inherit;text-align:left}
 .opt.on{border-color:var(--acc);background:var(--acc-l)}
 .opt b{display:block}.opt small{color:var(--mut);font-size:13px}
@@ -111,6 +112,7 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
         <button class="opt on" data-v="video"><b>Видео</b><small>MP4, открывается везде</small></button>
         <button class="opt" data-v="audio"><b>Только звук</b><small>MP3</small></button>
         <button class="opt" data-v="video+text"><b>Видео + текст</b><small>скачать и расшифровать</small></button>
+        <button class="opt" data-v="minus"><b>Минус</b><small>трек без голоса</small></button>
       </div>
       <div id="dl-lang" class="hidden" style="margin-top:14px">
         <div class="q">Язык речи</div>
@@ -161,6 +163,9 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
       <button class="act" data-a="transcribe">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4"/></svg>
         <b>В текст</b><small>расшифровать речь</small></button>
+      <button class="act" data-a="separate">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M2 2l20 20"/></svg>
+        <b>Убрать голос</b><small>минус из песни</small></button>
     </div>
   </div>
 
@@ -203,6 +208,11 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
       <div id="convrows"></div>
     </div>
 
+    <div id="o-separate" class="hidden">
+      <div class="q">Нейросеть отделит голос от музыки</div>
+      <div class="note" style="margin-top:0">Получите: минус (MP3 320 и WAV) и отдельно голос (акапеллу). Песня 3–4 минуты на Mac M-серии — около минуты, на Windows — 5–15 минут.</div>
+    </div>
+
     <div id="o-transcribe" class="hidden">
       <div class="q">Язык записи</div>
       <div class="chips" data-k="language">
@@ -236,8 +246,8 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
 const KINDS={video:"mp4 mov m4v mkv avi webm wmv flv 3gp mts gif",audio:"mp3 wav m4a aac flac ogg opus wma aiff aif",image:"jpg jpeg png webp heic heif tif tiff bmp",pdf:"pdf",doc:"docx doc odt rtf txt pages",slides:"pptx ppt odp key",sheet:"xlsx xls ods csv numbers"};
 const TARGETS={video:["mp4","mov","mp3","gif","webm","m4a","wav","mkv"],audio:["mp3","m4a","wav","flac"],image:["jpg","png","webp","pdf"],pdf:["docx","jpg","png","txt"],doc:["pdf","docx","txt","odt"],slides:["pdf","pptx"],sheet:["pdf","xlsx","csv"]};
 const KNAME={video:"Видео",audio:"Аудио",image:"Фото",pdf:"PDF",doc:"Документы",slides:"Презентации",sheet:"Таблицы"};
-const ACTNAME={compress:"Сжатие",convert:"Смена формата",transcribe:"Расшифровка",download:"Скачивание"};
-const GO={compress:"Сжать",convert:"Сменить формат",transcribe:"Расшифровать"};
+const ACTNAME={compress:"Сжатие",convert:"Смена формата",transcribe:"Расшифровка",download:"Скачивание",separate:"Убрать голос"};
+const GO={compress:"Сжать",convert:"Сменить формат",transcribe:"Расшифровать",separate:"Убрать голос"};
 let mode="files",action="compress",files=[],targets={};
 const urlList=()=>$("#urls").value.split(/\s+/).map(s=>s.trim()).filter(s=>/^(https?:\/\/)?[\w-]+(\.[\w-]+)+\//i.test(s));
 document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>{mode=b.dataset.m;render();if(mode==="link")$("#urls").focus()});
@@ -274,12 +284,14 @@ function render(){
 
   const kinds=[...new Set(files.map(f=>kind(f.name)).filter(Boolean))];
   const mediaOnly=kinds.length>0&&kinds.every(k=>k==="audio"||k==="video");
-  const tb=document.querySelector('[data-a="transcribe"]');
-  tb.disabled=!mediaOnly&&files.length>0;
-  if(tb.disabled&&action==="transcribe")action="compress";
+  ["transcribe","separate"].forEach(a=>{
+    const b=document.querySelector(`[data-a="${a}"]`);
+    b.disabled=!mediaOnly&&files.length>0;
+    if(b.disabled&&action===a)action="compress";
+  });
 
   document.querySelectorAll(".act").forEach(b=>b.classList.toggle("on",b.dataset.a===action));
-  ["compress","convert","transcribe"].forEach(a=>$("#o-"+a).classList.toggle("hidden",a!==action));
+  ["compress","convert","transcribe","separate"].forEach(a=>$("#o-"+a).classList.toggle("hidden",a!==action));
   $("#s2").classList.toggle("off",!files.length);
   $("#s3").classList.toggle("off",!files.length);
 
@@ -309,7 +321,7 @@ function render(){
 }
 function startDownload(){
   const m=val("dl_mode");
-  const opts={mode:m==="audio"?"audio":"video",then_transcribe:m==="video+text",language:val("dl_language"),dl_quality:val("dl_quality"),browser:val("browser")};
+  const opts={mode:m==="audio"?"audio":"video",then_transcribe:m==="video+text",then_separate:m==="minus",language:val("dl_language"),dl_quality:val("dl_quality"),browser:val("browser")};
   const fd=new FormData();fd.append("action","download");fd.append("opts",JSON.stringify(opts));fd.append("urls",urlList().join("\n"));
   fetch("/api/jobs",{method:"POST",body:fd}).then(()=>{poll();document.querySelector(".rh").scrollIntoView({behavior:"smooth"})});
   $("#urls").value="";render();
@@ -319,7 +331,7 @@ const plural=n=>n%10===1&&n%100!==11?"файл":[2,3,4].includes(n%10)&&![12,13,
 $("#go").onclick=()=>{
   if(mode==="link")return startDownload();
   const opts=action==="compress"?{quality:val("quality"),resolution:val("resolution"),codec:val("codec"),max_side:val("max_side"),image_format:val("image_format")}
-    :action==="convert"?{targets}:{language:val("language"),model:val("model"),prompt:$("#prompt").value};
+    :action==="convert"?{targets}:action==="separate"?{}:{language:val("language"),model:val("model"),prompt:$("#prompt").value};
   const fd=new FormData();fd.append("action",action);fd.append("opts",JSON.stringify(opts));
   files.forEach(f=>fd.append("files",f,f.name));
   const x=new XMLHttpRequest();x.open("POST","/api/jobs");
@@ -329,7 +341,7 @@ $("#go").onclick=()=>{
   x.send(fd);files=[];render();$("#go").disabled=true;
 };
 
-const label=n=>n.includes("таймкод")?"Текст с таймкодами":({txt:"Текст",docx:"Word",srt:"Субтитры SRT",vtt:"Субтитры VTT"})[ext(n)]||ext(n).toUpperCase();
+const label=n=>n.includes("(минус)")?"Минус "+ext(n).toUpperCase():n.includes("(голос)")?"Голос":n.includes("таймкод")?"Текст с таймкодами":({txt:"Текст",docx:"Word",srt:"Субтитры SRT",vtt:"Субтитры VTT"})[ext(n)]||ext(n).toUpperCase();
 async function poll(){
   try{
     const jobs=await (await fetch("/api/jobs")).json();
@@ -348,7 +360,7 @@ async function poll(){
 setInterval(poll,1000);poll();render();
 
 fetch("/api/status").then(r=>r.json()).then(s=>{
-  const miss=[["ffmpeg","видео и аудио"],["ytdlp","скачивание по ссылкам"],["ghostscript","сжатие PDF"],["libreoffice","Word/PowerPoint/Excel"],["whisper","расшифровка"]].filter(([k])=>!s[k]).map(([,n])=>n);
+  const miss=[["ffmpeg","видео и аудио"],["ytdlp","скачивание по ссылкам"],["separator","убрать голос"],["ghostscript","сжатие PDF"],["libreoffice","Word/PowerPoint/Excel"],["whisper","расшифровка"]].filter(([k])=>!s[k]).map(([,n])=>n);
   if(miss.length)$("#warn").innerHTML=`<div class="warn">Не установлено: ${miss.join(", ")}. Запустите install.sh ещё раз.</div>`;
 });
 </script>

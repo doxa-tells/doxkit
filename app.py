@@ -113,6 +113,7 @@ JOBS_LOCK = threading.Lock()
 Q_FAST = queue.Queue()      # сжатие и конвертация
 Q_WHISPER = queue.Queue()   # расшифровка (по одной, чтобы не делить GPU)
 Q_DL = queue.Queue()        # скачивание по ссылкам
+Q_SEP = queue.Queue()       # отделение голоса (тяжёлое, по одному)
 
 
 def new_job(**kw):
@@ -881,7 +882,9 @@ def h_download(job):
         "windowsfilenames": True, "retries": 5, "fragment_retries": 5,
         "concurrent_fragment_downloads": 4,
     }
-    if mode == "audio":
+    if o.get("then_separate"):
+        opts["format"] = "ba/b"  # лучший звук как есть, без пережатия
+    elif mode == "audio":
         opts["format"] = "ba/b"
         opts["postprocessors"] = [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3",
                                    "preferredquality": "192"}]
@@ -920,7 +923,19 @@ def h_download(job):
     for p in paths:
         add_output(job, p)
 
-    if o.get("then_transcribe"):
+    if o.get("then_separate"):
+        for p in paths:
+            d = WORK_DIR / uuid.uuid4().hex
+            d.mkdir(parents=True)
+            dst = d / p.name
+            try:
+                os.link(p, dst)
+            except OSError:
+                shutil.copy2(p, dst)
+            Q_SEP.put(new_job(action="separate", kind="audio", name=p.name, src=str(dst),
+                              size=dst.stat().st_size, opts={}))
+        job["note"] = "Скачано · убираю голос — смотрите ниже"
+    elif o.get("then_transcribe"):
         for p in paths:
             d = WORK_DIR / uuid.uuid4().hex
             d.mkdir(parents=True)
@@ -938,6 +953,104 @@ def h_download(job):
         job["note"] = "Скачано"
 
 
+# ---------------------------------------------------------------------------
+# УБРАТЬ ГОЛОС (минус / акапелла) — audio-separator + модель BS-RoFormer
+# ---------------------------------------------------------------------------
+SEP_MODEL = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"  # один из лучших открытых для вокала
+SEP_DIR = APP_DIR / "models"
+_SEP_CACHE = {}
+
+
+def _patch_tqdm_in(prefix, job, lo=1, hi=95):
+    """Подменяет tqdm во всех модулях пакета, чтобы видеть проценты."""
+    import tqdm as tqdm_mod
+
+    class Prog(tqdm_mod.tqdm):
+        def __init__(self, *a, **k):
+            k["disable"] = False
+            k["file"] = open(os.devnull, "w")  # noqa: SIM115
+            super().__init__(*a, **k)
+
+        def update(self, n=1):
+            r = super().update(n)
+            if self.total:
+                update(job, progress=max(lo, min(hi, lo + int(self.n / self.total * (hi - lo)))))
+            return r
+
+    swapped = []
+    for name, mod in list(sys.modules.items()):
+        if name.startswith(prefix) and mod is not None:
+            if getattr(mod, "tqdm", None) is tqdm_mod.tqdm:
+                swapped.append((mod, mod.tqdm))
+                mod.tqdm = Prog
+    return lambda: [setattr(m, "tqdm", o) for m, o in swapped]
+
+
+def h_separate(job):
+    src = Path(job["src"])
+    if not importlib.util.find_spec("audio_separator"):
+        raise RuntimeError("Модуль «Убрать голос» не установлен. Запустите установщик DoxKit ещё раз")
+
+    update(job, message="Готовлю звук…", progress=1)
+    wav = src.parent / "_in.wav"
+    run(["ffmpeg", "-hide_banner", "-y", "-i", str(src), "-vn", "-ac", "2", "-ar", "44100",
+         "-c:a", "pcm_s16le", str(wav)])
+    outdir = src.parent / "sep"
+    outdir.mkdir(exist_ok=True)
+
+    sep = _SEP_CACHE.get("sep")
+    if sep is None:
+        update(job, message="Загружаю нейросеть (в первый раз скачается ~600 МБ)…")
+        from audio_separator.separator import Separator
+        SEP_DIR.mkdir(exist_ok=True)
+        sep = Separator(model_file_dir=str(SEP_DIR), output_dir=str(outdir), output_format="WAV")
+        sep.load_model(model_filename=SEP_MODEL)
+        _SEP_CACHE["sep"] = sep
+    sep.output_dir = str(outdir)
+    try:
+        sep.model_instance.output_dir = str(outdir)
+    except Exception:  # noqa: BLE001
+        pass
+
+    started = time.time()
+    stop = threading.Event()
+
+    def tick():
+        while not stop.wait(1):
+            el = int(time.time() - started)
+            update(job, message=f"Отделяю голос от музыки… {el // 60}:{el % 60:02d}")
+
+    threading.Thread(target=tick, daemon=True).start()
+    restore = _patch_tqdm_in("audio_separator", job, 3, 95)
+    try:
+        produced = sep.separate(str(wav)) or []
+    finally:
+        stop.set()
+        restore()
+
+    cands = [Path(f) if Path(f).is_absolute() else outdir / f for f in produced]
+    cands = [c for c in cands if c.exists()] or list(outdir.glob("*.wav"))
+    inst = next((c for c in cands if "instrumental" in c.name.lower()), None)
+    voc = next((c for c in cands if "vocal" in c.name.lower()), None)
+    if not inst:
+        raise RuntimeError("Не получилось отделить голос от этого файла")
+
+    update(job, message="Сохраняю…", progress=97)
+    stem = src.stem
+    folder = unique_dir(f"{stem} — без голоса")
+    run(["ffmpeg", "-hide_banner", "-y", "-i", str(inst), "-c:a", "libmp3lame", "-b:a", "320k",
+         str(folder / f"{stem} (минус).mp3")])
+    shutil.move(str(inst), folder / f"{stem} (минус).wav")
+    if voc:
+        run(["ffmpeg", "-hide_banner", "-y", "-i", str(voc), "-c:a", "libmp3lame", "-b:a", "320k",
+             str(folder / f"{stem} (голос).mp3")])
+    for f in [folder / f"{stem} (минус).mp3", folder / f"{stem} (минус).wav", folder / f"{stem} (голос).mp3"]:
+        if f.exists():
+            add_output(job, f)
+    el = int(time.time() - started)
+    job["note"] = f"Готово за {el // 60}:{el % 60:02d} · минус и голос отдельно"
+
+
 def update_ytdlp_in_background():
     """Сайты часто меняются — раз в 2 дня тихо обновляем загрузчик."""
     stamp = APP_DIR / ".ytdlp_updated"
@@ -952,7 +1065,7 @@ def update_ytdlp_in_background():
 
 
 HANDLERS = {"compress": h_compress, "convert": h_convert, "transcribe": h_transcribe,
-            "download": h_download}
+            "download": h_download, "separate": h_separate}
 
 # ---------------------------------------------------------------------------
 # HTTP
@@ -974,6 +1087,7 @@ def status():
         "whisper": (importlib.util.find_spec("mlx_whisper") or importlib.util.find_spec("faster_whisper")) is not None,
         "pdf2docx": importlib.util.find_spec("pdf2docx") is not None,
         "ytdlp": importlib.util.find_spec("yt_dlp") is not None,
+        "separator": importlib.util.find_spec("audio_separator") is not None,
         "out_dir": str(OUT_ROOT),
     })
 
@@ -1011,15 +1125,15 @@ def create_jobs():
         error = None
         if not kind:
             error = f"Формат .{ext} не поддерживается"
-        elif action == "transcribe" and kind not in ("audio", "video"):
-            error = "Расшифровать можно только аудио или видео"
+        elif action in ("transcribe", "separate") and kind not in ("audio", "video"):
+            error = "Нужен аудио- или видеофайл"
         elif action == "convert" and not job["target"]:
             error = "Не выбран формат для этого файла"
         if error:
             update(job, status="error", message=error)
             shutil.rmtree(job_dir, ignore_errors=True)
         else:
-            (Q_WHISPER if action == "transcribe" else Q_FAST).put(job)
+            {"transcribe": Q_WHISPER, "separate": Q_SEP}.get(action, Q_FAST).put(job)
         created.append(public(job))
     return jsonify(created)
 
@@ -1121,6 +1235,7 @@ if __name__ == "__main__":
         threading.Thread(target=worker, args=(Q_WHISPER,), daemon=True).start()
         for _ in range(2):
             threading.Thread(target=worker, args=(Q_DL,), daemon=True).start()
+        threading.Thread(target=worker, args=(Q_SEP,), daemon=True).start()
         threading.Thread(target=update_ytdlp_in_background, daemon=True).start()
 
     try:
