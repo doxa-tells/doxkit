@@ -84,10 +84,10 @@ if ($LASTEXITCODE -ne 0) { Fail "Не удалось поставить библ
 & $VPy -m pip install -q -U "yt-dlp[default]"
 Write-Host "    Модель Whisper Turbo (~1.6 ГБ, скачивается один раз)…"
 & $VPy -c "from faster_whisper import WhisperModel; WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')"
-Write-Host "    Нейросеть «Убрать голос» (BS-RoFormer, ~600 МБ, один раз)…"
-& $VPy -m pip install -q -U "audio-separator[cpu]"
+Write-Host "    Нейросеть «Убрать голос» (BS-RoFormer, ~640 МБ, один раз — 5–10 минут, не закрывайте)…"
+& $VPy -m pip install -q -U "audio-separator[cpu]" audioread soundfile
 $Models = Join-Path $Dest "models"
-& $VPy -c "from audio_separator.separator import Separator as S; s=S(model_file_dir=r'$Models'); s.load_model(model_filename='model_bs_roformer_ep_317_sdr_12.9755.ckpt')" *> $null
+& $VPy -c "from audio_separator.separator import Separator as S; s=S(model_file_dir=r'$Models'); s.load_model(model_filename='model_bs_roformer_ep_317_sdr_12.9755.ckpt')"
 
 # ---------------------------------------------------------------------------
 Step "5/6 Иконка"

@@ -1075,7 +1075,9 @@ app = Flask(__name__)
 
 @app.get("/")
 def index():
-    return send_file(APP_DIR / "index.html")
+    r = send_file(APP_DIR / "index.html")
+    r.headers["Cache-Control"] = "no-store"  # чтобы после обновления окно не показывало старую версию
+    return r
 
 
 @app.get("/api/status")
