@@ -933,7 +933,8 @@ def h_download(job):
             except OSError:
                 shutil.copy2(p, dst)
             Q_SEP.put(new_job(action="separate", kind="audio", name=p.name, src=str(dst),
-                              size=dst.stat().st_size, opts={}))
+                              size=dst.stat().st_size,
+                              opts={"sep_out": o.get("sep_out"), "sep_speed": o.get("sep_speed")}))
         job["note"] = "Скачано · убираю голос — смотрите ниже"
     elif o.get("then_transcribe"):
         for p in paths:
@@ -998,19 +999,34 @@ def h_separate(job):
     outdir = src.parent / "sep"
     outdir.mkdir(exist_ok=True)
 
+    o = job.get("opts") or {}
+    want = set(o.get("sep_out") or ["mp3"])          # mp3 / wav / voc
+    want &= {"mp3", "wav", "voc"}
+    if not want:
+        want = {"mp3"}
+    # overlap = сколько раз нейросеть проходит каждый кусок песни.
+    # 2 — в 4 раза быстрее стандартных 8, разницу на слух почти не слышно.
+    overlap = 8 if o.get("sep_speed") == "best" else 2
+
     sep = _SEP_CACHE.get("sep")
     if sep is None:
-        update(job, message="Загружаю нейросеть (в первый раз скачается ~600 МБ)…")
+        update(job, message="Загружаю нейросеть в память…")
         from audio_separator.separator import Separator
         SEP_DIR.mkdir(exist_ok=True)
-        sep = Separator(model_file_dir=str(SEP_DIR), output_dir=str(outdir), output_format="WAV")
+        sep = Separator(model_file_dir=str(SEP_DIR), output_dir=str(outdir), output_format="WAV",
+                        mdxc_params={"segment_size": 256, "override_model_segment_size": False,
+                                     "batch_size": 1, "overlap": overlap, "pitch_shift": 0})
         sep.load_model(model_filename=SEP_MODEL)
         _SEP_CACHE["sep"] = sep
     sep.output_dir = str(outdir)
-    try:
-        sep.model_instance.output_dir = str(outdir)
-    except Exception:  # noqa: BLE001
-        pass
+    mi = getattr(sep, "model_instance", None)
+    for attr, val in (("output_dir", str(outdir)), ("overlap", overlap),
+                      ("output_single_stem", None if "voc" in want else "Instrumental")):
+        try:
+            if mi is not None:
+                setattr(mi, attr, val)
+        except Exception:  # noqa: BLE001
+            pass
 
     started = time.time()
     stop = threading.Event()
@@ -1037,18 +1053,30 @@ def h_separate(job):
 
     update(job, message="Сохраняю…", progress=97)
     stem = src.stem
-    folder = unique_dir(f"{stem} — без голоса")
-    run(["ffmpeg", "-hide_banner", "-y", "-i", str(inst), "-c:a", "libmp3lame", "-b:a", "320k",
-         str(folder / f"{stem} (минус).mp3")])
-    shutil.move(str(inst), folder / f"{stem} (минус).wav")
-    if voc:
-        run(["ffmpeg", "-hide_banner", "-y", "-i", str(voc), "-c:a", "libmp3lame", "-b:a", "320k",
-             str(folder / f"{stem} (голос).mp3")])
-    for f in [folder / f"{stem} (минус).mp3", folder / f"{stem} (минус).wav", folder / f"{stem} (голос).mp3"]:
-        if f.exists():
-            add_output(job, f)
+    outs = []
+    # Один файл — кладём сразу в «Загрузки/DoxKit», несколько — в отдельную папку
+    many = len(want) > 1
+    folder = unique_dir(f"{stem} — без голоса") if many else OUT_ROOT
+
+    def dest(tag, ext):
+        return folder / f"{stem} ({tag}).{ext}" if many else unique_path(stem, ext, f" ({tag})")
+
+    if "mp3" in want:
+        f = dest("минус", "mp3")
+        run(["ffmpeg", "-hide_banner", "-y", "-i", str(inst), "-c:a", "libmp3lame", "-b:a", "320k", str(f)])
+        outs.append(f)
+    if "wav" in want:
+        f = dest("минус", "wav")
+        shutil.move(str(inst), f)
+        outs.append(f)
+    if "voc" in want and voc:
+        f = dest("голос", "mp3")
+        run(["ffmpeg", "-hide_banner", "-y", "-i", str(voc), "-c:a", "libmp3lame", "-b:a", "320k", str(f)])
+        outs.append(f)
+    for f in outs:
+        add_output(job, f)
     el = int(time.time() - started)
-    job["note"] = f"Готово за {el // 60}:{el % 60:02d} · минус и голос отдельно"
+    job["note"] = f"Готово за {el // 60}:{el % 60:02d}"
 
 
 def update_ytdlp_in_background():

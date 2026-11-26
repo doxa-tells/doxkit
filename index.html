@@ -114,6 +114,16 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
         <button class="opt" data-v="video+text"><b>Видео + текст</b><small>скачать и расшифровать</small></button>
         <button class="opt" data-v="minus"><b>Минус</b><small>трек без голоса</small></button>
       </div>
+      <div id="dl-minus" class="hidden" style="margin-top:14px">
+      <div class="q">Что сохранить <span style="font-weight:400;color:var(--mut)">— можно несколько</span></div>
+      <div class="chips" data-k="dl_sep_out" data-multi="1">
+        <button class="chip lc on" data-v="mp3">Минус MP3</button><button class="chip lc" data-v="wav">Минус WAV (без потерь)</button><button class="chip lc" data-v="voc">Голос отдельно</button>
+      </div>
+      <div class="q" style="margin-top:14px">Режим</div>
+      <div class="chips" data-k="dl_sep_speed">
+        <button class="chip lc on" data-v="fast">Быстро — рекомендую</button><button class="chip lc" data-v="best">Максимальное качество (в 4 раза дольше)</button>
+      </div>
+      </div>
       <div id="dl-lang" class="hidden" style="margin-top:14px">
         <div class="q">Язык речи</div>
         <div class="chips" data-k="dl_language">
@@ -209,8 +219,15 @@ textarea{width:100%;min-height:60px;font:inherit;font-size:15px;border:2px solid
     </div>
 
     <div id="o-separate" class="hidden">
-      <div class="q">Нейросеть отделит голос от музыки</div>
-      <div class="note" style="margin-top:0">Получите: минус (MP3 320 и WAV) и отдельно голос (акапеллу). Песня 3–4 минуты на Mac M-серии — около минуты, на Windows — 5–15 минут.</div>
+<div class="q">Что сохранить <span style="font-weight:400;color:var(--mut)">— можно несколько</span></div>
+      <div class="chips" data-k="sep_out" data-multi="1">
+        <button class="chip lc on" data-v="mp3">Минус MP3</button><button class="chip lc" data-v="wav">Минус WAV (без потерь)</button><button class="chip lc" data-v="voc">Голос отдельно</button>
+      </div>
+      <div class="q" style="margin-top:14px">Режим</div>
+      <div class="chips" data-k="sep_speed">
+        <button class="chip lc on" data-v="fast">Быстро — рекомендую</button><button class="chip lc" data-v="best">Максимальное качество (в 4 раза дольше)</button>
+      </div>
+      <div class="note">Нейросеть отделяет голос от музыки. Песня 3–4 минуты: на Mac M-серии ~1 минута, на Windows 3–10 минут.</div>
     </div>
 
     <div id="o-transcribe" class="hidden">
@@ -261,7 +278,12 @@ const post=u=>fetch(u,{method:"POST"});
 // Выбор действия
 document.querySelectorAll(".act").forEach(b=>b.onclick=()=>{action=b.dataset.a;render()});
 // Одиночный выбор в группах
-document.querySelectorAll("[data-k]").forEach(g=>g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+document.querySelectorAll("[data-multi]").forEach(g=>g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  b.classList.toggle("on");
+  if(!g.querySelector(".on"))b.classList.add("on"); // хотя бы один вариант
+}));
+const multi=k=>[...document.querySelectorAll(`[data-k="${k}"] .on`)].map(b=>b.dataset.v);
+document.querySelectorAll("[data-k]:not([data-multi])").forEach(g=>g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
   g.querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));render();
 }));
 const val=k=>document.querySelector(`[data-k="${k}"] .on`).dataset.v;
@@ -310,6 +332,7 @@ function render(){
   if(mode==="link"){
     const n=urlList().length;
     $("#dl-lang").classList.toggle("hidden",val("dl_mode")!=="video+text");
+    $("#dl-minus").classList.toggle("hidden",val("dl_mode")!=="minus");
     $("#go").disabled=!n;
     $("#go").textContent=n>1?`Скачать · ${n} ссылки`:"Скачать";
     $("#upl").textContent="";
@@ -321,7 +344,7 @@ function render(){
 }
 function startDownload(){
   const m=val("dl_mode");
-  const opts={mode:m==="audio"?"audio":"video",then_transcribe:m==="video+text",then_separate:m==="minus",language:val("dl_language"),dl_quality:val("dl_quality"),browser:val("browser")};
+  const opts={mode:m==="audio"?"audio":"video",then_transcribe:m==="video+text",then_separate:m==="minus",sep_out:multi("dl_sep_out"),sep_speed:val("dl_sep_speed"),language:val("dl_language"),dl_quality:val("dl_quality"),browser:val("browser")};
   const fd=new FormData();fd.append("action","download");fd.append("opts",JSON.stringify(opts));fd.append("urls",urlList().join("\n"));
   fetch("/api/jobs",{method:"POST",body:fd}).then(()=>{poll();document.querySelector(".rh").scrollIntoView({behavior:"smooth"})});
   $("#urls").value="";render();
@@ -331,7 +354,7 @@ const plural=n=>n%10===1&&n%100!==11?"файл":[2,3,4].includes(n%10)&&![12,13,
 $("#go").onclick=()=>{
   if(mode==="link")return startDownload();
   const opts=action==="compress"?{quality:val("quality"),resolution:val("resolution"),codec:val("codec"),max_side:val("max_side"),image_format:val("image_format")}
-    :action==="convert"?{targets}:action==="separate"?{}:{language:val("language"),model:val("model"),prompt:$("#prompt").value};
+    :action==="convert"?{targets}:action==="separate"?{sep_out:multi("sep_out"),sep_speed:val("sep_speed")}:{language:val("language"),model:val("model"),prompt:$("#prompt").value};
   const fd=new FormData();fd.append("action",action);fd.append("opts",JSON.stringify(opts));
   files.forEach(f=>fd.append("files",f,f.name));
   const x=new XMLHttpRequest();x.open("POST","/api/jobs");
@@ -349,11 +372,11 @@ async function poll(){
       const after=j.outputs.reduce((a,o)=>a+o.size,0);
       const size=j.status==="done"&&j.action==="compress"?` · ${fmt(j.size)} → ${fmt(after)}`:j.size?` · ${fmt(j.size)}`:"";
       const msg=j.status==="queued"?"Ждёт очереди":j.status==="running"?(j.message||"Работаю")+(j.progress?` · ${j.progress}%`:""):j.message;
-      const multi=j.outputs.length>1;
+      const many=j.outputs.length>1;
       return `<div class="job ${j.status}"><div class="jt"><span class="n">${esc(j.name)}</span><span class="badge">${ACTNAME[j.action]}${size}</span></div>
       ${j.status==="done"?"":`<div class="bar"><div style="width:${j.status==="queued"?2:Math.max(j.progress,3)}%"></div></div>`}
       <div class="msg">${j.status==="done"?"✓ ":""}${esc(msg||"")}</div>
-      ${j.outputs.length?`<div class="btns">${multi?j.outputs.map((o,i)=>`<button class="btn g" onclick="post('/api/open/${j.id}/${i}')">${esc(label(o.name))}</button>`).join(""):`<button class="btn" onclick="post('/api/open/${j.id}/0')">Открыть</button>`}<button class="btn g" onclick="post('/api/reveal/${j.id}/0')">Показать в папке</button></div>`:""}
+      ${j.outputs.length?`<div class="btns">${many?j.outputs.map((o,i)=>`<button class="btn g" onclick="post('/api/open/${j.id}/${i}')">${esc(label(o.name))}</button>`).join(""):`<button class="btn" onclick="post('/api/open/${j.id}/0')">Открыть</button>`}<button class="btn g" onclick="post('/api/reveal/${j.id}/0')">Показать в папке</button></div>`:""}
       </div>`}).join(""):`<div class="empty">Здесь появятся ваши файлы</div>`;
   }catch(e){}
 }
